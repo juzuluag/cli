@@ -24,6 +24,7 @@ import { getDefaultDevContainerConfigPath, getDevContainerConfigPathIn, uriToFsP
 import { getCLIHost } from '../spec-common/cliHost';
 import { loadNativeModule } from '../spec-common/commonUtils';
 import { generateFeaturesConfig, getContainerFeaturesFolder } from '../spec-configuration/containerFeaturesConfiguration';
+import { doFeaturesTestCommand } from './testContainerFeatures';
 
 const defaultDefaultUserEnvProbe: UserEnvProbe = 'loginInteractiveShell';
 
@@ -46,6 +47,7 @@ const defaultDefaultUserEnvProbe: UserEnvProbe = 'loginInteractiveShell';
 	y.command('build [path]', 'Build a dev container image', buildOptions, buildHandler);
 	y.command('run-user-commands', 'Run user commands', runUserCommandsOptions, runUserCommandsHandler);
 	y.command('read-configuration', 'Read configuration', readConfigurationOptions, readConfigurationHandler);
+	y.command('features test [baseImage] [pathToCollection] <features..>', 'Test dev container features', featuresTestOptions, featuresTestHandler);
 	y.command(restArgs ? ['exec', '*'] : ['exec <cmd> [args..]'], 'Execute a command on a running dev container', execOptions, execHandler);
 	y.parse(restArgs ? argv.slice(1) : argv);
 
@@ -54,6 +56,31 @@ const defaultDefaultUserEnvProbe: UserEnvProbe = 'loginInteractiveShell';
 type UnpackArgv<T> = T extends Argv<infer U> ? U : T;
 
 const mountRegex = /^type=(bind|volume),source=([^,]+),target=([^,]+)(?:,external=(true|false))?$/;
+
+// -- 'features test' command
+function featuresTestOptions(y: Argv) {
+	return y.options({
+		'base-image': { type: 'string', alias: 'b', default: 'mcr.microsoft.com/vscode/devcontainers/base:focal', description: 'Base Image' },
+		'path-to-collection': { type: 'string', alias: 'c', default: '.', describe: 'Path to collections folder' },
+		'features': { type: 'string', describe: 'Feature(s) IDs to test, comma separated.', }
+	});
+}
+
+export type FeaturesTestArgs = UnpackArgv<ReturnType<typeof featuresTestOptions>>;
+
+function featuresTestHandler({
+	'base-image': baseImage,
+	'path-to-collection': pathToCollection,
+	features
+}: FeaturesTestArgs) {
+	if (!features) {
+		process.stderr.write('Must supply comma separated list of features to test');
+		process.exit(1);
+	}
+	(async () => await doFeaturesTestCommand(baseImage, pathToCollection, features)().catch(console.error));
+}
+
+// -- End: 'features test' command
 
 function provisionOptions(y: Argv) {
 	return y.options({
@@ -82,7 +109,7 @@ function provisionOptions(y: Argv) {
 		'user-data-folder': { type: 'string', description: 'Host path to a directory that is intended to be persisted and share state between sessions.' },
 		'mount': { type: 'string', description: 'Additional mount point(s). Format: type=<bind|volume>,source=<source>,target=<target>[,external=<true|false>]' },
 		'remote-env': { type: 'string', description: 'Remote environment variables of the format name=value. These will be added when executing the user commands.' },
-		'cache-from' : {type: 'string', description: 'Additional image to use as potential layer cache during image building' },
+		'cache-from': { type: 'string', description: 'Additional image to use as potential layer cache during image building' },
 	})
 		.check(argv => {
 			const idLabels = (argv['id-label'] && (Array.isArray(argv['id-label']) ? argv['id-label'] : [argv['id-label']])) as string[] | undefined;
@@ -141,7 +168,7 @@ async function provision({
 	'remote-env': addRemoteEnv,
 	'cache-from': addCacheFrom,
 }: ProvisionArgs) {
-	
+
 	const workspaceFolder = workspaceFolderArg ? path.resolve(process.cwd(), workspaceFolderArg) : undefined;
 	const addRemoteEnvs = addRemoteEnv ? (Array.isArray(addRemoteEnv) ? addRemoteEnv as string[] : [addRemoteEnv]) : [];
 	const addCacheFroms = addCacheFrom ? (Array.isArray(addCacheFrom) ? addCacheFrom as string[] : [addCacheFrom]) : [];
@@ -194,7 +221,7 @@ async function provision({
 
 async function doProvision(options: ProvisionOptions) {
 	const disposables: (() => Promise<unknown> | undefined)[] = [];
-	const dispose = async () =>  {
+	const dispose = async () => {
 		await Promise.all(disposables.map(d => d()));
 	};
 	try {
@@ -235,7 +262,7 @@ function buildOptions(y: Argv) {
 		'log-format': { choices: ['text' as 'text', 'json' as 'json'], default: 'text' as 'text', description: 'Log format.' },
 		'no-cache': { type: 'boolean', default: false, description: 'Builds the image with `--no-cache`.' },
 		'image-name': { type: 'string', description: 'Image name.' },
-		'cache-from' : {type: 'string', description: 'Additional image to use as potential layer cache' },
+		'cache-from': { type: 'string', description: 'Additional image to use as potential layer cache' },
 	});
 }
 
@@ -265,7 +292,7 @@ async function doBuild({
 	'cache-from': addCacheFrom,
 }: BuildArgs) {
 	const disposables: (() => Promise<unknown> | undefined)[] = [];
-	const dispose = async () =>  {
+	const dispose = async () => {
 		await Promise.all(disposables.map(d => d()));
 	};
 	try {
@@ -300,14 +327,14 @@ async function doBuild({
 			remoteEnv: {},
 			additionalCacheFroms: addCacheFroms,
 		}, disposables);
-		
+
 		const { common, dockerCLI, dockerComposeCLI } = params;
 		const { cliHost, env, output } = common;
 		const workspace = workspaceFromPath(cliHost.path, workspaceFolder);
 		const configPath = configFile ? configFile : workspace
-		? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
-		|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
-		: overrideConfigFile;
+			? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
+				|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
+			: overrideConfigFile;
 		const configs = configPath && await readDevContainerConfigFile(cliHost, workspace, configPath, params.mountWorkspaceGitRoot, output, undefined, overrideConfigFile) || undefined;
 		if (!configs) {
 			throw new ContainerError({ description: `Dev container config (${uriToFsPath(configFile || getDefaultDevContainerConfigPath(cliHost, workspace!.configFolderPath), cliHost.platform)}) not found.` });
@@ -315,52 +342,52 @@ async function doBuild({
 		const { config } = configs;
 
 		if (isDockerFileConfig(config)) {
-	
+
 			// Build the base image
 			const baseImageName = getFolderImageName(params.common);
 			await buildImage(params, config, baseImageName, params.buildNoCache || false);
-	
+
 			// Extend image with features, etc..
 			const { updatedImageName } = await extendImage(params, config, baseImageName, 'image' in config, findUserArg(config.runArgs) || config.containerUser);
-	
+
 			if (argImageName) {
 				await dockerPtyCLI(params, 'tag', updatedImageName, argImageName);
 			}
 		} else if ('dockerComposeFile' in config) {
-	
+
 			const cwdEnvFile = cliHost.path.join(cliHost.cwd, '.env');
 			const envFile = Array.isArray(config.dockerComposeFile) && config.dockerComposeFile.length === 0 && await cliHost.isFile(cwdEnvFile) ? cwdEnvFile : undefined;
 			const composeFiles = await getDockerComposeFilePaths(cliHost, config, cliHost.env, workspaceFolder);
-	
+
 			// If dockerComposeFile is an array, add -f <file> in order. https://docs.docker.com/compose/extends/#multiple-compose-files
 			const composeGlobalArgs = ([] as string[]).concat(...composeFiles.map(composeFile => ['-f', composeFile]));
 			if (envFile) {
 				composeGlobalArgs.push('--env-file', envFile);
 			}
 			const projectName = await getProjectName(params, workspace, composeFiles);
-	
+
 			const buildParams: DockerCLIParameters = { cliHost, dockerCLI, dockerComposeCLI, env, output };
-		
+
 			const composeConfig = await readDockerComposeConfig(buildParams, composeFiles, envFile);
 			const services = Object.keys(composeConfig.services || {});
 			if (services.indexOf(config.service) === -1) {
 				throw new Error(`Service '${config.service}' configured in devcontainer.json not found in Docker Compose configuration.`);
 			}
-	
+
 			await buildDockerCompose(config, projectName, buildParams, composeFiles, composeGlobalArgs, [config.service], params.buildNoCache || false, undefined, addCacheFroms);
-	
+
 			const service = composeConfig.services[config.service];
 			const originalImageName = service.image || `${projectName}_${config.service}`;
 			const { updatedImageName } = await extendImage(params, config, originalImageName, !service.build, service.user);
-			
+
 			if (argImageName) {
 				await dockerPtyCLI(params, 'tag', updatedImageName, argImageName);
 			}
 		} else {
-			
+
 			await dockerPtyCLI(params, 'pull', config.image);
 			const { updatedImageName } = await extendImage(params, config, config.image, 'image' in config, findUserArg(config.runArgs) || config.containerUser);
-	
+
 			if (argImageName) {
 				await dockerPtyCLI(params, 'tag', updatedImageName, argImageName);
 			}
@@ -460,7 +487,7 @@ async function doRunUserCommands({
 	'remote-env': addRemoteEnv,
 }: RunUserCommandsArgs) {
 	const disposables: (() => Promise<unknown> | undefined)[] = [];
-	const dispose = async () =>  {
+	const dispose = async () => {
 		await Promise.all(disposables.map(d => d()));
 	};
 	try {
@@ -501,8 +528,8 @@ async function doRunUserCommands({
 		const { cliHost, output } = common;
 		const workspace = workspaceFromPath(cliHost.path, workspaceFolder);
 		const configPath = configFile ? configFile : workspace
-		? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
-			|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
+			? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
+				|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
 			: overrideConfigFile;
 		const configs = configPath && await readDevContainerConfigFile(cliHost, workspace, configPath, params.mountWorkspaceGitRoot, output, undefined, overrideConfigFile) || undefined;
 		if (!configs) {
@@ -575,7 +602,7 @@ async function readConfiguration({
 	'include-features-configuration': includeFeaturesConfig,
 }: ReadConfigurationArgs) {
 	const disposables: (() => Promise<unknown> | undefined)[] = [];
-	const dispose = async () =>  {
+	const dispose = async () => {
 		await Promise.all(disposables.map(d => d()));
 	};
 	let output: Log | undefined;
@@ -597,14 +624,14 @@ async function readConfiguration({
 
 		const workspace = workspaceFromPath(cliHost.path, workspaceFolder);
 		const configPath = configFile ? configFile : workspace
-		? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
-			|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
+			? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
+				|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
 			: overrideConfigFile;
 		const configs = configPath && await readDevContainerConfigFile(cliHost, workspace, configPath, mountWorkspaceGitRoot, output, undefined, overrideConfigFile) || undefined;
 		if (!configs) {
 			throw new ContainerError({ description: `Dev container config (${uriToFsPath(configFile || getDefaultDevContainerConfigPath(cliHost, workspace!.configFolderPath), cliHost.platform)}) not found.` });
 		}
-		const featuresConfiguration = includeFeaturesConfig ? await generateFeaturesConfig({ extensionPath, cwd: process.cwd(), output, env: cliHost.env }, (await createFeaturesTempFolder({ cliHost, package: pkg })), configs.config, async () => /* TODO: ? (await imageDetails()).Config.Labels || */ ({}), getContainerFeaturesFolder) : undefined;
+		const featuresConfiguration = includeFeaturesConfig ? await generateFeaturesConfig({ extensionPath, cwd: process.cwd(), output, env: cliHost.env }, (await createFeaturesTempFolder({ cliHost, package: pkg })), configs.config, async () => /* TODO: ? (await imageDetails()).Config.Labels || */({}), getContainerFeaturesFolder) : undefined;
 		await new Promise<void>((resolve, reject) => {
 			process.stdout.write(JSON.stringify({
 				configuration: configs.config,
@@ -703,7 +730,7 @@ async function doExec({
 	_: restArgs,
 }: ExecArgs & { _?: string[] }) {
 	const disposables: (() => Promise<unknown> | undefined)[] = [];
-	const dispose = async () =>  {
+	const dispose = async () => {
 		await Promise.all(disposables.map(d => d()));
 	};
 	try {
@@ -744,8 +771,8 @@ async function doExec({
 		const { cliHost, output } = common;
 		const workspace = workspaceFromPath(cliHost.path, workspaceFolder);
 		const configPath = configFile ? configFile : workspace
-		? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
-			|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
+			? (await getDevContainerConfigPathIn(cliHost, workspace.configFolderPath)
+				|| (overrideConfigFile ? getDefaultDevContainerConfigPath(cliHost, workspace.configFolderPath) : undefined))
 			: overrideConfigFile;
 		const configs = configPath && await readDevContainerConfigFile(cliHost, workspace, configPath, params.mountWorkspaceGitRoot, output, undefined, overrideConfigFile) || undefined;
 		if (!configs) {
