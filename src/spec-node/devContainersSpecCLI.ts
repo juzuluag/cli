@@ -702,9 +702,10 @@ function execOptions(y: Argv) {
 		});
 }
 
-type ExecArgs = UnpackArgv<ReturnType<typeof execOptions>>;
+export type ExecArgs = UnpackArgv<ReturnType<typeof execOptions>>;
 
 function execHandler(args: ExecArgs) {
+	process.stdout.write(JSON.stringify(args));
 	(async () => exec(args))().catch(console.error);
 }
 
@@ -716,7 +717,7 @@ async function exec(args: ExecArgs) {
 	process.exit(exitCode);
 }
 
-async function doExec({
+export async function doExec({
 	'user-data-folder': persistedFolder,
 	'docker-path': dockerPath,
 	'docker-compose-path': dockerComposePath,
