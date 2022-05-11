@@ -35,6 +35,7 @@
 	},
 	"devDependencies": {
 		"@types/chai": "^4.3.0",
+		"@types/chalk": "^2.2.0",
 		"@types/follow-redirects": "^1.13.1",
 		"@types/js-yaml": "^4.0.5",
 		"@types/mocha": "^9.1.0",
@@ -64,10 +65,11 @@
 	},
 	"dependencies": {
 		"@types/ncp": "^2.0.5",
-		"ncp": "^2.0.0",
+		"chalk": "^4",
 		"follow-redirects": "^1.14.8",
 		"js-yaml": "^4.1.0",
 		"jsonc-parser": "^3.0.0",
+		"ncp": "^2.0.0",
 		"node-pty": "^0.10.1",
 		"pull-stream": "^3.6.14",
 		"semver": "^7.3.5",
