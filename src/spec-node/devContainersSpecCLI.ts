@@ -74,7 +74,7 @@ export interface FeaturesTestCommandInput {
 	cliHost: CLIHost;
 	baseImage: string;
 	directory: string;
-	features: string;
+	features?: string;
 	remoteUser: string;
 	quiet: boolean;
 }
@@ -92,13 +92,6 @@ async function featuresTest({
 }: FeaturesTestArgs) {
 	const cwd = process.cwd();
 	const cliHost = await getCLIHost(cwd, loadNativeModule);
-
-	console.log(directory)
-
-	if (!features) {
-		process.stderr.write('TODO: Support auto running against all features in ./test if none specified');
-		process.exit(1);
-	}
 
 	const params: FeaturesTestCommandInput = {
 		cliHost,
